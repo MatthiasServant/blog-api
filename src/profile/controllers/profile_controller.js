@@ -3,18 +3,33 @@ const Company = require("../models/company");
 
 const { getUrl } = require("../../../utils/getter");
 const { removeFields } = require("../../../utils/remover");
+const { getComments, getPosts } = require("../../helpers");
+const Profile = require("../models/profile");
+
+
+const getProfiles = async (req, res) => {
+    const profiles = await Profile.find({ owner: req.account }).select("-_id -__v");
+
+    res.json(profiles);
+};
 
 const createProfile = async (req, res) => {
     const { kind, ...body } = req.body;
-    let profile;
 
     try {
+        const profileExists = await Person.find({ owner: req.account }).exec();
+        if (profileExists.length >= 5) {
+            return res.status(400).json({ msg: "You already have 5 profiles" });
+        }
+
+        let profile;
+
         switch (kind) {
             case "person":
-                profile = new Person(body);
+                profile = new Person({ ...body, owner: req.account });
                 break;
             case "company":
-                profile = new Company(body);
+                profile = new Company({ ...body, owner: req.account });
                 break;
             default:
                 return res.status(400).json({ msg: "Invalid kind" });
@@ -29,6 +44,88 @@ const createProfile = async (req, res) => {
     }
 };
 
+
+const updateProfile = async (req, res) => {
+    try {
+        const profile = await Profile.findOneAndUpdate({ owner: req.accountId, id: req.body.id }, req.body, {
+            new: true,
+            runValidators: true,
+        }).lean().exec();
+
+        if (!profile) {
+            return res.status(404).json({ msg: "Profile not found" });
+        }
+
+        res.status(200).json(profile);
+    } catch (error) {
+        res.status(500).json({ msg: error });
+    }
+};   
+
+const deleteProfile = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const profile = await Profile.findOne({ id: id }).exec();
+        if (!profile) {
+            return res.status(404).json({ msg: "Profile not found" });
+        }
+
+        await profile.delete();
+
+        res.status(204).end();
+    } catch (err) {
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+const getProfileById = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const profile = await Profile.findOne({ id: id }).select("-_id -__v").lean().exec();
+
+        if (!profile) {
+            return res.status(404).json({ msg: "Profile not found" });
+        }
+
+        res.status(200).json({ profile });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+const getProfilePosts = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const posts = await getPosts({ createdBy: id });
+
+        res.status(200).json(posts);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+const getProfileComments = async (req, res) => {
+    const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    try {
+        const comments = await getComments({ createdBy: id }, page, limit);
+
+        res.status(200).json(comments);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 module.exports = {
+    getProfiles,
     createProfile,
+    updateProfile,
+    deleteProfile,
+    getProfileById,
+    getProfilePosts,
+    getProfileComments,
 };
